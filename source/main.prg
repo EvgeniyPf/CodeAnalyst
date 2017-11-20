@@ -196,19 +196,19 @@ DEFINE CLASS _codeAnalyzer AS CUSTOM
 							THIS.cRuleDir = _AnalystRuledir
 						ELSE
 							THIS.lUseDefaultDir = .T.
-							THIS.cRuleDir = CURDIR()
+							THIS.cRuleDir = SYS(5)+CURDIR()
 						ENDIF
 					ELSE
 						THIS.lUseDefaultDir = .T.
-						THIS.cRuleDir = CURDIR()
+						THIS.cRuleDir = SYS(5)+CURDIR()
 					ENDIF
 					IF TYPE("_ANALYSTHomeDIR")="C"
 						IF NOT EMPTY(_Analysthomedir)
 						ELSE
-							THIS.cHomeDir = CURDIR()
+							THIS.cHomeDir = SYS(5)+CURDIR()
 						ENDIF
 					ELSE
-						THIS.cHomeDir = CURDIR()
+						THIS.cHomeDir = SYS(5)+CURDIR()
 					ENDIF
 
 
@@ -399,6 +399,9 @@ DEFINE CLASS _codeAnalyzer AS CUSTOM
 		
 		DEFINE BAR 5942 OF _MTOOLS PROMPT "Code Analyst..." AFTER  _MTL_TOOLBOX
 		ON SELECTION BAR 5942 OF _MTOOLS &lcDir
+		
+		DEFINE BAR 5943 OF _MTOOLS PROMPT "Code Analyst Settings..." AFTER  _MTL_TOOLBOX
+		ON SELECTION BAR 5943 OF _MTOOLS &lcSettings
 
 		SET EXACT &lcSetExact
 
@@ -594,7 +597,7 @@ DEFINE CLASS _codeAnalyzer AS CUSTOM
 				THIS.oTherm.HIDE()
 			ENDIF
 
-			ERROR loErr.MESSAGE+ " on line " + TRANSFORM(loErr.LINENO)+" of "+loErr.PROCEDURE
+			ERROR loErr.ErrorNo, loErr.MESSAGE+ " on line " + TRANSFORM(loErr.LINENO)+" of "+loErr.PROCEDURE
 		ENDTRY
 		THIS.PostValidate()
 		SET DEFAULT TO (lcDir)
@@ -872,7 +875,7 @@ ENDIF
 		lcAlias = SYS(2015)
 		SELECT 0
 		USE (tcFile) AGAIN SHARED ALIAS &lcAlias
-		SCAN FOR NOT TYPE="H"
+		SCAN FOR NOT TYPE="H" AND ! &lcAlias..EXCLUDE
 			THIS.oTherm.SetProgress(RECNO()/RECCOUNT()*95)
 			lcFile = STRTRAN(NAME,CHR(0))
 			THIS.AnalFile(lcFile)
@@ -1035,7 +1038,7 @@ ENDIF
 	ENDPROC
 	PROCEDURE ValidateLine
 		LPARAMETERS tcLine
-		LOCAL lni,lcFunc
+		LOCAL lni, lcFunc, lcRule
 
 		THIS.cLine = tcLine
 		FOR lni = 1 TO ALEN(THIS.aRules,1)
@@ -1049,15 +1052,22 @@ ENDIF
 
 			ENDIF
 			IF THIS.aRules(lni,2)="L"
+				lcRule = THIS.aRules(lni,1)
 				lcFunc = THIS.aRules(lni,3)
-				EXECSCRIPT(lcFunc)
+				*EXECSCRIPT(lcFunc)
+				TRY
+					EXECSCRIPT(lcFunc)
+				CATCH TO loErr
+					THIS.AddError(loErr,lcRule,lcFunc)
+					THIS.aRules(lni,1) = ""
+				ENDTRY
 			ENDIF
 		ENDFOR
 
 	PROCEDURE ValidateFile
 		LPARAMETERS tcFile,tcName
 
-		LOCAL lni,lcFunc
+		LOCAL lni, lcFunc, lcRule
 		THIS.cFile = tcName
 		THIS.cCode = tcFile
 		FOR lni = 1 TO ALEN(THIS.aRules,1)
@@ -1071,8 +1081,15 @@ ENDIF
 
 			ENDIF
 			IF THIS.aRules(lni,2)="F"
+				lcRule = THIS.aRules(lni,1)
 				lcFunc = THIS.aRules(lni,3)
-				EXECSCRIPT(lcFunc)
+				*EXECSCRIPT(lcFunc)
+				TRY
+					EXECSCRIPT(lcFunc)
+				CATCH TO loErr
+					THIS.AddError(loErr,lcRule,lcFunc)
+					THIS.aRules(lni,1) = ""
+				ENDTRY
 			ENDIF
 		ENDFOR
 
@@ -1084,7 +1101,7 @@ ENDIF
 			THIS.cFuncName = THIS.cFile
 		ENDIF
 		THIS.oTherm.setstatus("Function: "+tcName)
-		LOCAL lni,lcFunc
+		LOCAL lni, lcFunc, lcRule
 		THIS.cCode = tcCode
 		FOR lni = 1 TO ALEN(THIS.aRules,1)
 			IF EMPTY(THIS.aRules(lni,1))
@@ -1112,7 +1129,7 @@ ENDIF
 	PROCEDURE PreValidate
 
 		THIS.oTherm.setstatus("Pre Analysis Rules")
-		LOCAL lni,lcFunc
+		LOCAL lni, lcFunc, lcRule
 		FOR lni = 1 TO ALEN(THIS.aRules,1)
 			IF EMPTY(THIS.aRules(lni,1))
 				LOOP
@@ -1139,7 +1156,7 @@ ENDIF
 	PROCEDURE PostValidate
 
 		THIS.oTherm.setstatus("Post Analysis Rules")
-		LOCAL lni,lcFunc
+		LOCAL lni, lcFunc, lcRule
 		FOR lni = 1 TO ALEN(THIS.aRules,1)
 			IF EMPTY(THIS.aRules(lni,1))
 				LOOP
@@ -1165,8 +1182,9 @@ ENDIF
 
 	PROCEDURE AddError
 		LPARAMETERS toErr,tcRule,tcFunc
-		THIS.cError = THIS.cError + loErr.MESSAGE+" occurred on line "+LTRIM(STR(loErr.LINENO))+" ("+loErr.LINECONTENTS+") in rule "+tcRule + CHR(13)+CHR(10)
-
+		THIS.cError = THIS.cError + toErr.MESSAGE+" occurred on line "+LTRIM(STR(toErr.LINENO))+" ("+toErr.LINECONTENTS+") in rule "+tcRule + CHR(13)+CHR(10)
+		DEBUGOUT THIS.cError
+		
 	PROCEDURE Add2Array
 		LPARAMETERS tcCode,tnLines,taArray
 
